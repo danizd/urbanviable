@@ -1,0 +1,36 @@
+services:
+  urbanviable-tiles:
+    image: maptiler/tileserver-gl:latest
+    container_name: urbanviable-tiles
+    restart: unless-stopped
+    volumes:
+      - ./tiles_data:/data
+    command: --config /data/config.json
+    networks:
+      - urbanviable-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  urbanviable-web:
+    image: nginx:1.25-alpine
+    container_name: urbanviable-web
+    restart: unless-stopped
+    depends_on:
+      - urbanviable-tiles
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./frontend/build:/usr/share/nginx/html:ro
+      - ./certs:/etc/letsencrypt:ro
+      - ./tiles_data:/data:ro
+    networks:
+      - urbanviable-net
+
+networks:
+  urbanviable-net:
+    driver: bridge

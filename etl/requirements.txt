@@ -1,0 +1,8 @@
+geopandas>=0.14
+pandas>=2.0
+pyrosm>=0.6
+pyproj>=3.6
+shapely>=2.0
+openpyxl>=3.1
+requests>=2.31
+numpy>=1.26

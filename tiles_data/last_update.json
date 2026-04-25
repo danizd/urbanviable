@@ -1,0 +1,20 @@
+{
+  "updated_at": "2026-04-25T18:58:18.469128+00:00",
+  "sections_count": 2134,
+  "year_data": "desconocido",
+  "sources": {
+    "geometries": "CNIG secciones censales",
+    "renta": "INE Atlas de Renta (año desconocido)",
+    "osm": "OpenStreetMap Galicia (Geofabrik)",
+    "catastro": "Sede Electronica del Catastro"
+  },
+  "variables": [
+    "renta_norm",
+    "densidad_norm",
+    "jovenes_norm",
+    "mayores_norm",
+    "actividad_norm",
+    "uso_comercial_norm",
+    "antiguedad_norm"
+  ]
+}

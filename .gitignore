@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+
+# ETL artifacts
+etl/data/processed/*.geojson
+etl/data/processed/*.mbtiles
+etl/data/processed/*.json
+
+# Local heavy datasets
+etl/data/secciones_censales/*.zip
+etl/data/osm/*.pbf
+etl/data/catastro/**
+
+# Local heavy datasets (añadidos para evitar límite de 100MB)
+etl/data/secciones_censales/*.shp
+etl/data/*.pbf
+etl/data/*.csv
+
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+
+# Env and OS
+.env
+*.env.local
+.DS_Store
+Thumbs.db

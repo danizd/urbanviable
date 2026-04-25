@@ -1,0 +1,68 @@
+export const DEFAULT_WEIGHTS = {
+  renta_norm: 0.25,
+  densidad_norm: 0.25,
+  jovenes_norm: 0.2,
+  mayores_norm: 0.15,
+  actividad_norm: 0.1,
+  uso_comercial_norm: 0.03,
+  antiguedad_norm: 0.02,
+};
+
+export const VARIABLES = [
+  {
+    key: 'renta_norm',
+    label: 'Renta',
+    description: 'Capacidad adquisitiva media de la sección censal.',
+    absKey: 'renta_abs',
+    absLabel: 'Renta media',
+    absFormat: (value) => `${Number(value || 0).toLocaleString('es-ES')} €`,
+  },
+  {
+    key: 'densidad_norm',
+    label: 'Densidad',
+    description: 'Concentración de población por kilómetro cuadrado.',
+    absKey: 'poblacion_abs',
+    absLabel: 'Habitantes',
+    absFormat: (value) => `${Number(value || 0).toLocaleString('es-ES')} hab.`,
+  },
+  {
+    key: 'jovenes_norm',
+    label: 'Jóvenes',
+    description: 'Peso relativo de población joven.',
+    absKey: 'jovenes_norm',
+    absLabel: 'Índice jóvenes',
+    absFormat: (value) => Number(value || 0).toFixed(2),
+  },
+  {
+    key: 'mayores_norm',
+    label: 'Mayores',
+    description: 'Peso relativo de población de mayor edad.',
+    absKey: 'mayores_norm',
+    absLabel: 'Índice mayores',
+    absFormat: (value) => Number(value || 0).toFixed(2),
+  },
+  {
+    key: 'actividad_norm',
+    label: 'Actividad',
+    description: 'Densidad de actividad económica y comercial.',
+    absKey: 'actividad_abs',
+    absLabel: 'Establecimientos',
+    absFormat: (value) => `${Number(value || 0).toLocaleString('es-ES')} estab.`,
+  },
+  {
+    key: 'uso_comercial_norm',
+    label: 'Uso comercial',
+    description: 'Proporción de usos vinculados a actividad económica.',
+    absKey: 'uso_comercial_norm',
+    absLabel: 'Índice comercial',
+    absFormat: (value) => Number(value || 0).toFixed(2),
+  },
+  {
+    key: 'antiguedad_norm',
+    label: 'Antigüedad',
+    description: 'Proxy de modernidad del tejido construido.',
+    absKey: 'antiguedad_norm',
+    absLabel: 'Índice antigüedad',
+    absFormat: (value) => Number(value || 0).toFixed(2),
+  },
+];
