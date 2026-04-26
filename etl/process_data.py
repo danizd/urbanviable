@@ -55,19 +55,36 @@ def load_sections() -> gpd.GeoDataFrame:
     if "CUSEC" not in gdf.columns:
         raise KeyError("El shapefile no contiene el campo CUSEC")
 
+    # Normalizar CUSEC a 10 dígitos
     gdf["CUSEC"] = gdf["CUSEC"].astype(str).str.zfill(10)
+    # Filtrar solo Galicia (provincias 15, 27, 32, 36)
     gdf = gdf[gdf["CUSEC"].str[:2].isin(GALICIA_PROVINCIAS)].copy()
     gdf["cusec"] = gdf["CUSEC"]
 
+    # Calcular área en km²
     projected = gdf.to_crs(epsg=25830)
     gdf["area_km2"] = projected.geometry.area / 1_000_000
     gdf = gdf.to_crs(epsg=4326)
 
-    pop_col = next((c for c in ["NPOB", "POB_TOT", "POBLACION", "TOTAL"] if c in gdf.columns), None)
-    gdf["poblacion_abs"] = pd.to_numeric(gdf[pop_col], errors="coerce").fillna(0).astype(int) if pop_col else 0
+    # Buscar campo de población — puede venir como string con separadores
+    pop_candidates = ["NPOB", "POB_TOT", "POBLACION", "TOTAL", "POB", "POPULATION", "pop"]
+    pop_col = None
+    for c in pop_candidates:
+        if c in gdf.columns:
+            pop_col = c
+            break
+    
+    if pop_col:
+        # Limpiar valores: quitar puntos de miles y convertir a int
+        raw = gdf[pop_col].astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
+        gdf["poblacion_abs"] = pd.to_numeric(raw, errors="coerce").fillna(0).astype(int)
+    else:
+        print("  ⚠️  No se encontró columna de población en shapefile. Usando 0.")
+        gdf["poblacion_abs"] = 0
+
     gdf["densidad"] = gdf["poblacion_abs"] / gdf["area_km2"].clip(lower=0.01)
 
-    # Se conservan en 0 salvo que haya fuente adicional preparada para edades.
+    # Juventud/vejez — no disponible en shapefile base, se deja 0
     gdf["pct_jovenes"] = 0.0
     gdf["pct_mayores"] = 0.0
 
@@ -75,11 +92,20 @@ def load_sections() -> gpd.GeoDataFrame:
 
 
 def parse_cusec_ine(text: str) -> Optional[str]:
-    value = str(text)
-    municipio = value[:5].strip()
-    match = re.search(r"Secci[oó]n:(\d{3})\s+(\d{2})", value, flags=re.IGNORECASE)
-    if municipio.isdigit() and len(municipio) == 5 and match:
-        return f"{municipio}{match.group(1)}{match.group(2)}"
+    """
+    Extrae el CUSEC de 10 dígitos de los campos del INE.
+    Formatos soportados:
+      - "0100101001 Abegondo sección 01001" -> "0100101001"
+      - "0100101001" (solo número)
+    """
+    if pd.isna(text):
+        return None
+    s = str(text).strip()
+    # Extraer los primeros 10 dígitos consecutivos
+    import re
+    match = re.match(r'(\d{10})', s)
+    if match:
+        return match.group(1)
     return None
 
 
@@ -88,45 +114,102 @@ def process_renta(gdf: gpd.GeoDataFrame) -> tuple[gpd.GeoDataFrame, str]:
         gdf["renta_abs"] = 0
         return gdf, "desconocido"
 
-    df = pd.read_csv(RENTA_FILE, sep=";", encoding="latin-1", dtype=str)
+    # Usar utf-8-sig para manejar BOM automáticamente
+    try:
+        df = pd.read_csv(RENTA_FILE, sep=";", encoding="utf-8-sig", dtype=str, low_memory=False)
+    except UnicodeDecodeError:
+        df = pd.read_csv(RENTA_FILE, sep=";", encoding="latin-1", dtype=str, low_memory=False)
+
     if df.shape[1] < 4:
         gdf["renta_abs"] = 0
         return gdf, "desconocido"
 
-    col_lugar = df.columns[0]
-    col_indicador = df.columns[1]
-    col_periodo = df.columns[2]
-    col_valor = df.columns[3]
+    # Limpiar nombres de columnas
+    df.columns = df.columns.str.strip()
+    # Quitar BOM si existe en la primera columna
+    df.columns = df.columns.str.replace(r'ï»¿', '', regex=True)
 
-    mask = df[col_indicador].str.contains("Renta neta media por hogar", case=False, na=False)
-    df_renta = df[mask].copy()
-    if df_renta.empty:
+    # El CSV del INE tiene esta estructura:
+    # Col 0: Municipios (código + nombre, solo a nivel municipio)
+    # Col 1: Distritos (código + nombre, a nivel distrito)
+    # Col 2: Secciones (código + nombre, a nivel sección censal) ← Aquí está el CUSEC
+    # Col 3: Indicadores de renta media ← Aquí está el nombre del indicador
+    # Col 4: Periodo (año)
+    # Col 5: Total (valor)
+    
+    col_seccion = df.columns[2]   # "Secciones"
+    col_indicador = df.columns[3] # "Indicadores de renta media"
+    col_periodo = df.columns[4]   # "Periodo"
+    col_valor = df.columns[5]     # "Total"
+
+    # Extraer CUSEC de la columna "Secciones" (formato: "0100101001 Alegría-Dulantzi sección 01001")
+    def extract_cusec(val):
+        if pd.isna(val):
+            return None
+        s = str(val).strip()
+        # El CUSEC son los primeros 10 dígitos
+        import re
+        match = re.match(r'(\d{10})', s)
+        return match.group(1) if match else None
+
+    df["cusec"] = df[col_seccion].apply(extract_cusec)
+    df = df.dropna(subset=["cusec"])
+
+    if df.empty:
+        print("  ⚠️ No se encontraron CUSECs válidos en renta.csv")
         gdf["renta_abs"] = 0
         return gdf, "desconocido"
 
+    # Buscar indicador de renta neta por hogar (o por persona como fallback)
+    # Prioridad: 1) "Renta neta media por hogar", 2) "Renta neta media por persona"
+    indicators_priority = [
+        "Renta neta media por hogar",
+        "Renta neta media por persona"
+    ]
+    df_renta = None
+    for priority_indicator in indicators_priority:
+        mask = df[col_indicador].str.contains(priority_indicator, case=False, na=False)
+        if mask.any():
+            df_renta = df[mask].copy()
+            print(f"  ✓ Usando indicador: '{priority_indicator}'")
+            break
+
+    if df_renta is None or df_renta.empty:
+        print(f"  ⚠️ No se encontró indicador de renta. Valores disponibles en '{col_indicador}':")
+        print(df[col_indicador].dropna().unique()[:10])
+        gdf["renta_abs"] = 0
+        return gdf, "desconocido"
+
+    # Seleccionar el año más reciente
     year_series = pd.to_numeric(df_renta[col_periodo], errors="coerce")
-    year_value = int(year_series.dropna().max()) if not year_series.dropna().empty else None
+    if year_series.dropna().empty:
+        gdf["renta_abs"] = 0
+        return gdf, "desconocido"
 
-    if year_value is not None:
-        df_renta = df_renta[year_series == year_value].copy()
+    max_year = int(year_series.max())
+    df_renta = df_renta[year_series == max_year].copy()
 
-    df_renta["cusec"] = df_renta[col_lugar].apply(parse_cusec_ine)
-    df_renta = df_renta.dropna(subset=["cusec"])
+    # Limpiar valores de renta (formato español: "12.345,67" → 12345.67)
+    def clean_renta(val):
+        s = str(val).strip()
+        if s in ['', 'nan', 'NaN']:
+            return 0.0
+        # Quitar puntos de miles y cambiar coma decimal por punto
+        s = s.replace(".", "").replace(",", ".")
+        try:
+            return float(s)
+        except:
+            return 0.0
 
-    clean_values = (
-        df_renta[col_valor]
-        .astype(str)
-        .str.replace(".", "", regex=False)
-        .str.replace(",", ".", regex=False)
-        .str.replace("..", "0", regex=False)
-        .str.strip()
-    )
-    df_renta["renta_abs"] = pd.to_numeric(clean_values, errors="coerce").fillna(0).astype(int)
-    renta = df_renta[["cusec", "renta_abs"]].drop_duplicates("cusec")
+    df_renta["renta_abs"] = df_renta[col_valor].apply(clean_renta)
+
+    # Agrupar por CUSEC (por si hay múltiples filas, tomar la primera)
+    renta = df_renta[["cusec", "renta_abs"]].drop_duplicates("cusec", keep="first")
 
     merged = gdf.merge(renta, on="cusec", how="left")
     merged["renta_abs"] = merged["renta_abs"].fillna(0).astype(int)
-    return merged, str(year_value) if year_value is not None else "desconocido"
+
+    return merged, str(max_year) if max_year is not None else "desconocido"
 
 
 def process_osm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:

@@ -3,6 +3,8 @@ services:
     image: maptiler/tileserver-gl:latest
     container_name: urbanviable-tiles
     restart: unless-stopped
+    ports:
+      - "8080:8080"
     volumes:
       - ./tiles_data:/data
     command: --config /data/config.json

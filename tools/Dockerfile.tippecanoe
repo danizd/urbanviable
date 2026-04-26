@@ -1,0 +1,17 @@
+# Imagen base con tippecanoe compilado
+# Usamos una imagen oficial de tippecanoe si existe, o construimos una
+
+# Intentamos usar una imagen precompilada si está disponible
+FROM alpine:latest AS downloader
+RUN apk add --no-cache curl
+# No hay imagen oficial, usaremos método alternativo
+
+# Esta imagen necesita ser construida desde fuentes. 
+# Por ahora, usaremos un enfoque distinto: instalar tippecanoe via apt en Ubuntu
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y \
+    tippecanoe \
+    && rm -rf /var/lib/apt/lists/*
+
+ENTRYPOINT ["tippecanoe"]

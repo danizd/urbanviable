@@ -1,11 +1,11 @@
 export const DEFAULT_WEIGHTS = {
   renta_norm: 0.25,
-  densidad_norm: 0.25,
-  jovenes_norm: 0.2,
-  mayores_norm: 0.15,
-  actividad_norm: 0.1,
-  uso_comercial_norm: 0.03,
-  antiguedad_norm: 0.02,
+  densidad_norm: 0.0,
+  jovenes_norm: 0.0,
+  mayores_norm: 0.0,
+  actividad_norm: 0.0,
+  uso_comercial_norm: 0.0,
+  antiguedad_norm: 0.0,
 };
 
 export const VARIABLES = [

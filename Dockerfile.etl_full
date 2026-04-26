@@ -1,0 +1,39 @@
+# Imagen ETL basada en Python oficial con geopandas pre-instalada
+FROM python:3.11-slim
+
+# Instalar dependencias del sistema para geopandas/pyrosm
+RUN apt-get update && apt-get install -y \
+    gdal-bin \
+    libgdal-dev \
+    libproj-dev \
+    libsqlite3-0 \
+    zlib1g \
+    libcurl4 \
+    libjansson4 \
+    libssl3 \
+    tippecanoe \
+    && rm -rf /var/lib/apt/lists/*
+
+# Actualizar pip
+RUN pip install --no-cache-dir --upgrade pip
+
+# Instalar dependencias Python (usar wheels cuando sea posible)
+RUN pip install --no-cache-dir \
+    geopandas \
+    pandas \
+    pyrosm==0.7.0 \
+    shapely \
+    fiona \
+    pyproj
+
+# Directorio de trabajo
+WORKDIR /workspace
+
+# Copiar scripts ETL
+COPY etl/process_data.py /workspace/process_data.py
+
+# Crear directorios de salida
+RUN mkdir -p /workspace/etl/data/processed /workspace/tiles_data
+
+# Comando: ejecutar ETL y generar tiles
+CMD ["bash", "-c", "python process_data.py && tippecanoe -o etl/data/processed/galicia_scouting.mbtiles --layer=secciones --minimum-zoom=6 --maximum-zoom=14 --coalesce-densest-as-needed --extend-zooms-if-still-dropping --simplification=2 --include=cusec --include=renta_norm --include=renta_abs --include=densidad_norm --include=jovenes_norm --include=mayores_norm --include=poblacion_abs --include=actividad_norm --include=actividad_abs --include=uso_comercial_norm --include=antiguedad_norm etl/data/processed/galicia_scouting.geojson && cp etl/data/processed/galicia_scouting.mbtiles /output/ && echo 'ETL completado'"]

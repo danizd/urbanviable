@@ -1,0 +1,49 @@
+# Imagen ETL completa con todas las dependencias
+FROM ubuntu:22.04
+
+# Evitar prompts interactivos
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalar dependencias del sistema
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    make \
+    git \
+    libsqlite3-dev \
+    zlib1g-dev \
+    libcurl4-openssl-dev \
+    libjansson-dev \
+    libssl-dev \
+    pkg-config \
+    ca-certificates \
+    curl \
+    unzip \
+    tippecanoe \
+    && rm -rf /var/lib/apt/lists/*
+
+# Actualizar pip
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel
+
+# Instalar dependencias Python
+RUN pip3 install --no-cache-dir \
+    geopandas \
+    pandas \
+    pyrosm==0.7.0 \
+    shapely \
+    fiona \
+    pyproj
+
+# Directorio de trabajo
+WORKDIR /workspace
+
+# Copiar código ETL
+COPY etl/process_data.py /workspace/process_data.py
+COPY etl/generate_tiles.sh /workspace/generate_tiles.sh
+
+# Copiar datos (montados en runtime)
+# Los datos se montan como volumen desde el host
+
+# Comando por defecto: ejecutar ETL completo
+CMD ["bash", "-c", "python3 process_data.py && tippecanoe -o etl/data/processed/galicia_scouting.mbtiles --layer=secciones --minimum-zoom=6 --maximum-zoom=14 --coalesce-densest-as-needed --extend-zooms-if-still-dropping --simplification=2 --include=cusec --include=renta_norm --include=renta_abs --include=densidad_norm --include=jovenes_norm --include=mayores_norm --include=poblacion_abs --include=actividad_norm --include=actividad_abs --include=uso_comercial_norm --include=antiguedad_norm etl/data/processed/galicia_scouting.geojson && echo 'ETL completado' && ls -lh etl/data/processed/"]

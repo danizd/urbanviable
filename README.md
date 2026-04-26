@@ -112,3 +112,116 @@ Si cambian variables `REACT_APP_*`, recompila frontend:
 cd frontend
 npm run build
 ```
+
+## Despliegue en Producción (Oracle Cloud ARM A1)
+
+### Pre-requisitos en tu máquina local
+
+1. **Build del frontend compilado (obligatorio)**:
+   - El servidor Oracle **no permite npm install/build**, así que el frontend DEBE estar pre-compilado.
+   - En tu máquina local, ejecuta:
+
+```powershell
+cd frontend
+npm install
+npm run build
+```
+
+   - Esto genera la carpeta `frontend/dist/` con archivos estáticos listos.
+
+2. **Artefactos ETL ya generados**:
+   - `etl/data/processed/galicia_scouting.mbtiles` (ubicar en `tiles_data/`)
+   - `etl/data/processed/last_update.json` (ubicar en `tiles_data/`)
+
+### Transferencia al servidor
+
+Conéctate al servidor Oracle y transfiere los artefactos:
+
+```bash
+# Desde tu máquina local
+scp -r frontend/dist/* usuario@tu-servidor:/home/usuario/urbanviable/frontend/dist/
+scp -r tiles_data/galicia_scouting.mbtiles usuario@tu-servidor:/home/usuario/urbanviable/tiles_data/
+scp -r tiles_data/config.json usuario@tu-servidor:/home/usuario/urbanviable/tiles_data/
+scp -r docker-compose.yml usuario@tu-servidor:/home/usuario/urbanviable/
+scp -r nginx/ usuario@tu-servidor:/home/usuario/urbanviable/
+```
+
+### Configuración en el servidor Oracle
+
+En el servidor, edita `.env`:
+
+```bash
+ssh usuario@tu-servidor
+
+cd /home/usuario/urbanviable
+
+# Crea/edita .env
+cat > .env << 'EOF'
+DOMAIN=tu-dominio.com
+ENVIRONMENT=production
+CORS_ORIGIN=https://tu-dominio.com
+REACT_APP_TILE_URL=https://tu-dominio.com/tiles
+REACT_APP_DATA_STATUS_URL=https://tu-dominio.com/api/status
+REACT_APP_LAYER_NAME=secciones
+REACT_APP_SOURCE_NAME=galicia-scouting
+EOF
+```
+
+### Arrancar servicios en producción
+
+```bash
+cd /home/usuario/urbanviable
+
+# Inicia Docker Compose en background
+docker compose up -d
+
+# Verifica que los contenedores estén corriendo
+docker compose ps
+docker compose logs -f
+```
+
+### Validar endpoints de producción
+
+```bash
+# Verifica que TileServer responde
+curl -s http://127.0.0.1:8080/data/galicia-scouting.json | jq . | head -20
+
+# Verifica que Nginx/frontend responden
+curl -s https://tu-dominio.com/api/status | jq .
+
+# Verifica que se sirven teselas
+curl -s https://tu-dominio.com/tiles/galicia-scouting/14/8192/5460.pbf | wc -c
+```
+
+### Reiniciar servicios (si necesario)
+
+```bash
+# Detener todo
+docker compose down
+
+# Reiniciar todo
+docker compose up -d
+```
+
+### Actualizaciones futuras
+
+Para actualizar datos o configuración en producción:
+
+1. **Solo teselas/datos ETL cambiaron**:
+   ```bash
+   scp tiles_data/galicia_scouting.mbtiles usuario@tu-servidor:~/urbanviable/tiles_data/
+   docker compose restart urbanviable-tiles
+   ```
+
+2. **Frontend cambió**:
+   ```bash
+   npm run build
+   scp -r frontend/dist/* usuario@tu-servidor:~/urbanviable/frontend/dist/
+   docker compose restart urbanviable-frontend
+   ```
+
+3. **Configuración de Nginx cambió**:
+   ```bash
+   scp -r nginx/conf.d/* usuario@tu-servidor:~/urbanviable/nginx/conf.d/
+   docker compose restart urbanviable-web
+   ```

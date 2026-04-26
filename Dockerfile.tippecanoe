@@ -1,0 +1,43 @@
+# Stage 1: Compilar tippecanoe
+FROM ubuntu:22.04 AS builder
+
+# Instalar dependencias de compilación
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    make \
+    git \
+    libsqlite3-dev \
+    zlib1g-dev \
+    libcurl4-openssl-dev \
+    libjansson-dev \
+    libssl-dev \
+    pkg-config \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar fuente
+COPY tools/tippecanoe-src/ /app/
+WORKDIR /app
+
+# Compilar con make (lento, pero solo se hace una vez)
+RUN make -j$(nproc)
+
+# Stage 2: Imagen final con librerías de runtime
+FROM ubuntu:22.04
+
+# Instalar librerías de runtime necesarias
+RUN apt-get update && apt-get install -y \
+    libsqlite3-0 \
+    zlib1g \
+    libcurl4 \
+    libjansson4 \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar binario compilado
+COPY --from=builder /app/tippecanoe /usr/local/bin/tippecanoe
+
+# Verificar instalación
+RUN tippecanoe --version
+
+ENTRYPOINT ["tippecanoe"]
