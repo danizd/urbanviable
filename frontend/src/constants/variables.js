@@ -13,6 +13,7 @@ export const VARIABLES = [
     key: 'renta_norm',
     label: 'Renta',
     description: 'Capacidad adquisitiva media de la sección censal.',
+    enabled: true,
     absKey: 'renta_abs',
     absLabel: 'Renta media',
     absFormat: (value) => `${Number(value || 0).toLocaleString('es-ES')} €`,
@@ -20,7 +21,8 @@ export const VARIABLES = [
   {
     key: 'densidad_norm',
     label: 'Densidad',
-    description: 'Concentración de población por kilómetro cuadrado.',
+    description: 'Concentración de población por kilómetro cuadrado. (No disponible en este despliegue)',
+    enabled: false,
     absKey: 'poblacion_abs',
     absLabel: 'Habitantes',
     absFormat: (value) => `${Number(value || 0).toLocaleString('es-ES')} hab.`,
@@ -28,7 +30,8 @@ export const VARIABLES = [
   {
     key: 'jovenes_norm',
     label: 'Jóvenes',
-    description: 'Peso relativo de población joven.',
+    description: 'Peso relativo de población joven. (No disponible en este despliegue)',
+    enabled: false,
     absKey: 'jovenes_norm',
     absLabel: 'Índice jóvenes',
     absFormat: (value) => Number(value || 0).toFixed(2),
@@ -36,7 +39,8 @@ export const VARIABLES = [
   {
     key: 'mayores_norm',
     label: 'Mayores',
-    description: 'Peso relativo de población de mayor edad.',
+    description: 'Peso relativo de población de mayor edad. (No disponible en este despliegue)',
+    enabled: false,
     absKey: 'mayores_norm',
     absLabel: 'Índice mayores',
     absFormat: (value) => Number(value || 0).toFixed(2),
@@ -44,7 +48,8 @@ export const VARIABLES = [
   {
     key: 'actividad_norm',
     label: 'Actividad',
-    description: 'Densidad de actividad económica y comercial.',
+    description: 'Densidad de actividad económica y comercial. (No disponible en este despliegue)',
+    enabled: false,
     absKey: 'actividad_abs',
     absLabel: 'Establecimientos',
     absFormat: (value) => `${Number(value || 0).toLocaleString('es-ES')} estab.`,
@@ -52,7 +57,8 @@ export const VARIABLES = [
   {
     key: 'uso_comercial_norm',
     label: 'Uso comercial',
-    description: 'Proporción de usos vinculados a actividad económica.',
+    description: 'Proporción de usos vinculados a actividad económica. (No disponible en este despliegue)',
+    enabled: false,
     absKey: 'uso_comercial_norm',
     absLabel: 'Índice comercial',
     absFormat: (value) => Number(value || 0).toFixed(2),
@@ -60,7 +66,8 @@ export const VARIABLES = [
   {
     key: 'antiguedad_norm',
     label: 'Antigüedad',
-    description: 'Proxy de modernidad del tejido construido.',
+    description: 'Proxy de modernidad del tejido construido. (No disponible en este despliegue)',
+    enabled: false,
     absKey: 'antiguedad_norm',
     absLabel: 'Índice antigüedad',
     absFormat: (value) => Number(value || 0).toFixed(2),

@@ -219,6 +219,14 @@ input {
   line-height: 1.5;
 }
 
+.slider-card.disabled {
+  opacity: 0.55;
+}
+
+.slider-card.disabled input[type='range'] {
+  cursor: not-allowed;
+}
+
 .map-shell {
   position: relative;
   min-height: 0;

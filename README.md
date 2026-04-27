@@ -106,6 +106,17 @@ docker compose up -d
 
 Ver `.env.example`.
 
+En este repositorio se usa `frontend/.env.production` para el build de produccion.
+
+Valores actuales recomendados:
+
+```env
+REACT_APP_TILE_URL=https://api.urbanviable.movilab.es/data
+REACT_APP_DATA_STATUS_URL=/api/status
+REACT_APP_LAYER_NAME=secciones
+REACT_APP_SOURCE_NAME=galicia-scouting
+```
+
 Si cambian variables `REACT_APP_*`, recompila frontend:
 
 ```powershell
@@ -127,7 +138,7 @@ npm install
 npm run build
 ```
 
-   - Esto genera la carpeta `frontend/dist/` con archivos estáticos listos.
+   - Esto genera la carpeta `frontend/build/` con archivos estáticos listos.
 
 2. **Artefactos ETL ya generados**:
    - `etl/data/processed/galicia_scouting.mbtiles` (ubicar en `tiles_data/`)
@@ -139,7 +150,7 @@ Conéctate al servidor Oracle y transfiere los artefactos:
 
 ```bash
 # Desde tu máquina local
-scp -r frontend/dist/* usuario@tu-servidor:/home/usuario/urbanviable/frontend/dist/
+scp -r frontend/build/* usuario@tu-servidor:/home/usuario/urbanviable/frontend/build/
 scp -r tiles_data/galicia_scouting.mbtiles usuario@tu-servidor:/home/usuario/urbanviable/tiles_data/
 scp -r tiles_data/config.json usuario@tu-servidor:/home/usuario/urbanviable/tiles_data/
 scp -r docker-compose.yml usuario@tu-servidor:/home/usuario/urbanviable/
@@ -148,7 +159,9 @@ scp -r nginx/ usuario@tu-servidor:/home/usuario/urbanviable/
 
 ### Configuración en el servidor Oracle
 
-En el servidor, edita `.env`:
+El frontend ya queda parametrizado por `frontend/.env.production` durante el build.
+
+En el servidor, edita `.env` solo para variables de infraestructura:
 
 ```bash
 ssh usuario@tu-servidor
@@ -160,10 +173,6 @@ cat > .env << 'EOF'
 DOMAIN=tu-dominio.com
 ENVIRONMENT=production
 CORS_ORIGIN=https://tu-dominio.com
-REACT_APP_TILE_URL=https://tu-dominio.com/tiles
-REACT_APP_DATA_STATUS_URL=https://tu-dominio.com/api/status
-REACT_APP_LAYER_NAME=secciones
-REACT_APP_SOURCE_NAME=galicia-scouting
 EOF
 ```
 
@@ -216,8 +225,8 @@ Para actualizar datos o configuración en producción:
 2. **Frontend cambió**:
    ```bash
    npm run build
-   scp -r frontend/dist/* usuario@tu-servidor:~/urbanviable/frontend/dist/
-   docker compose restart urbanviable-frontend
+   scp -r frontend/build/* usuario@tu-servidor:~/urbanviable/frontend/build/
+   docker compose restart urbanviable-web
    ```
 
 3. **Configuración de Nginx cambió**:
@@ -225,3 +234,9 @@ Para actualizar datos o configuración en producción:
    scp -r nginx/conf.d/* usuario@tu-servidor:~/urbanviable/nginx/conf.d/
    docker compose restart urbanviable-web
    ```
+
+## Estado funcional actual (MVP)
+
+- El slider de `Renta` es el unico habilitado en la interfaz de scouting.
+- El resto de variables aparecen deshabilitadas hasta disponer de datos consistentes en el tileset de produccion.
+- El slider de `Renta` controla la visualizacion de forma progresiva (0% sin capa visible, 100% intensidad completa).
