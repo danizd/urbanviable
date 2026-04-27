@@ -23,8 +23,7 @@ services:
     depends_on:
       - urbanviable-tiles
     ports:
-      - '80:80'
-      - '443:443'
+      - '3002:80'
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./frontend/build:/usr/share/nginx/html:ro

@@ -96,11 +96,15 @@ cd c:\Proyextos\UrbanViable
 docker compose up -d
 ```
 
+Nota de produccion en servidor compartido: si los puertos 80/443 del host ya estan ocupados por un proxy externo, mapea `urbanviable-web` a `3002:80` en `docker-compose.yml`.
+
 ## Endpoints esperados
 
 - Estado datos: `/api/status`
 - Metadata tileset: `/tiles/galicia-scouting.json`
 - Teselas: `/tiles/galicia-scouting/{z}/{x}/{y}.pbf`
+
+En el despliegue actual de produccion, el frontend consume tiles directamente desde `https://api.urbanviable.movilab.es/data`.
 
 ## Variables de entorno (build del frontend)
 
