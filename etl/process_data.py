@@ -31,6 +31,7 @@ DATA_DIR = Path("etl/data")
 PROCESSED_DIR = DATA_DIR / "processed"
 SECTIONS_DIR = DATA_DIR / "secciones_censales"
 RENTA_FILE = DATA_DIR / "renta.csv"
+POBLACION_IGE_FILE = DATA_DIR / "poblacion_ige.csv"
 OSM_FILE = DATA_DIR / "galicia-260424.osm.pbf"
 CATASTRO_DIR = DATA_DIR / "catastro"
 
@@ -79,7 +80,7 @@ def load_sections() -> gpd.GeoDataFrame:
         raw = gdf[pop_col].astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
         gdf["poblacion_abs"] = pd.to_numeric(raw, errors="coerce").fillna(0).astype(int)
     else:
-        print("  ⚠️  No se encontró columna de población en shapefile. Usando 0.")
+        print("  [!] No se encontro columna de poblacion en shapefile. Usando 0.")
         gdf["poblacion_abs"] = 0
 
     gdf["densidad"] = gdf["poblacion_abs"] / gdf["area_km2"].clip(lower=0.01)
@@ -156,7 +157,7 @@ def process_renta(gdf: gpd.GeoDataFrame) -> tuple[gpd.GeoDataFrame, str]:
     df = df.dropna(subset=["cusec"])
 
     if df.empty:
-        print("  ⚠️ No se encontraron CUSECs válidos en renta.csv")
+        print("  [!] No se encontraron CUSECs válidos en renta.csv")
         gdf["renta_abs"] = 0
         return gdf, "desconocido"
 
@@ -171,11 +172,11 @@ def process_renta(gdf: gpd.GeoDataFrame) -> tuple[gpd.GeoDataFrame, str]:
         mask = df[col_indicador].str.contains(priority_indicator, case=False, na=False)
         if mask.any():
             df_renta = df[mask].copy()
-            print(f"  ✓ Usando indicador: '{priority_indicator}'")
+            print(f"  [OK] Usando indicador: '{priority_indicator}'")
             break
 
     if df_renta is None or df_renta.empty:
-        print(f"  ⚠️ No se encontró indicador de renta. Valores disponibles en '{col_indicador}':")
+        print(f"  [!] No se encontró indicador de renta. Valores disponibles en '{col_indicador}':")
         print(df[col_indicador].dropna().unique()[:10])
         gdf["renta_abs"] = 0
         return gdf, "desconocido"
@@ -210,6 +211,121 @@ def process_renta(gdf: gpd.GeoDataFrame) -> tuple[gpd.GeoDataFrame, str]:
     merged["renta_abs"] = merged["renta_abs"].fillna(0).astype(int)
 
     return merged, str(max_year) if max_year is not None else "desconocido"
+
+
+def process_poblacion_ige(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    gdf["pct_jovenes"] = 0.0
+    gdf["pct_mayores"] = 0.0
+
+    if not POBLACION_IGE_FILE.exists():
+        print("  [!] Archivo de poblacion IGE no encontrado.")
+        return gdf
+
+    try:
+        df = pd.read_csv(POBLACION_IGE_FILE, encoding="latin-1", low_memory=False)
+    except Exception as e:
+        print(f"  [!] Error al leer poblacion IGE: {e}")
+        return gdf
+
+    col_ambito = df.columns[2]
+    col_indicador = df.columns[3]
+    col_valor = df.columns[4]
+
+    def is_cusec_10(val):
+        s = str(val).strip()
+        return s.isdigit() and len(s) == 10
+
+    df_cusec = df[df[col_ambito].apply(is_cusec_10)].copy()
+
+    if df_cusec.empty:
+        print("  [!] No se encontraron CUSEC de 10 digitos en poblacion IGE")
+        return gdf
+
+    indicadores = {
+        "jovenes": "menor de 20 anos",
+        "mayores": "maior de 64 anos",
+    }
+
+    for key, search in indicadores.items():
+        mask = df_cusec[col_indicador].str.contains(search, case=False, na=False)
+        if not mask.any():
+            print(f"  [!] Indicador de {key} no encontrado en IGE")
+            continue
+
+        temp = df_cusec[mask][[col_ambito, col_valor]].copy()
+        temp = temp.rename(columns={col_ambito: "cusec"})
+        temp["valor"] = pd.to_numeric(temp[col_valor].astype(str).str.replace(",", ".", regex=False), errors="coerce")
+        temp = temp[["cusec", "valor"]].drop_duplicates("cusec")
+
+        gdf = gdf.merge(temp, on="cusec", how="left")
+        gdf[f"pct_{key}"] = gdf["valor"].fillna(0.0)
+        gdf = gdf.drop(columns=["valor"])
+
+    n_jovenes = len(gdf[gdf["pct_jovenes"] > 0])
+    n_mayores = len(gdf[gdf["pct_mayores"] > 0])
+    print(f"  [OK] Poblacion IGE: {n_jovenes} secciones con datos de jovenes")
+    print(f"  [OK] Poblacion IGE: {n_mayores} secciones con datos de mayores")
+
+    return gdf
+
+    try:
+        df = pd.read_csv(POBLACION_IGE_FILE, encoding="latin-1", low_memory=False)
+    except Exception as e:
+        print(f"  [!] Error al leer población IGE: {e}. jovenes/mayores = 0")
+        gdf["pct_jovenes"] = 0.0
+        gdf["pct_mayores"] = 0.0
+        return gdf
+
+    col_ambito = df.columns[2]
+    col_indicador = df.columns[3]
+    col_valor = df.columns[4]
+
+    def is_cusec_10(val):
+        s = str(val).strip()
+        return s.isdigit() and len(s) == 10
+
+    df_cusec = df[df[col_ambito].apply(is_cusec_10)].copy()
+
+    if df_cusec.empty:
+        print("  [!] No se encontraron CUSEC de 10 dígitos en población IGE")
+        gdf["pct_jovenes"] = 0.0
+        gdf["pct_mayores"] = 0.0
+        return gdf
+
+    indicadores = {
+        "jovenes": "menor de 20 anos",
+        "mayores": "maior de 64 anos",
+    }
+
+    result = {}
+    for key, search in indicadores.items():
+        mask = df_cusec[col_indicador].str.contains(search, case=False, na=False)
+        if not mask.any():
+            print(f"  [!] Indicador de {key} no encontrado en IGE")
+            result[key] = None
+            continue
+        temp = df_cusec[mask][[col_ambito, col_valor]].copy()
+        temp[col_ambito] = temp[col_ambito].astype(str)
+        temp[col_valor] = pd.to_numeric(temp[col_valor].astype(str).str.replace(",", ".", regex=False), errors="coerce")
+        temp = temp.rename(columns={col_ambito: "cusec", col_valor: f"pct_{key}"})
+        result[key] = temp[["cusec", f"pct_{key}"]].drop_duplicates("cusec")
+
+    if result.get("jovenes") is not None:
+        gdf = gdf.merge(result["jovenes"], on="cusec", how="left")
+        gdf["pct_jovenes"] = gdf["pct_jovenes"].fillna(0.0)
+    else:
+        gdf["pct_jovenes"] = 0.0
+
+    if result.get("mayores") is not None:
+        gdf = gdf.merge(result["mayores"], on="cusec", how="left")
+        gdf["pct_mayores"] = gdf["pct_mayores"].fillna(0.0)
+    else:
+        gdf["pct_mayores"] = 0.0
+
+    print(f"  [OK] Población IGE: {len(gdf[gdf['pct_jovenes'] > 0])} secciones con datos de jóvenes")
+    print(f"  [OK] Población IGE: {len(gdf[gdf['pct_mayores'] > 0])} secciones con datos de mayores")
+
+    return gdf
 
 
 def process_osm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -387,13 +503,16 @@ def main() -> None:
     print("[2/5] Procesando renta...")
     gdf, renta_year = process_renta(gdf)
 
-    print("[3/5] Procesando actividad OSM...")
+    print("[3/5] Procesando población IGE...")
+    gdf = process_poblacion_ige(gdf)
+
+    print("[4/5] Procesando actividad OSM...")
     gdf = process_osm(gdf)
 
-    print("[4/5] Procesando catastro...")
+    print("[5/5] Procesando catastro...")
     gdf = process_catastro(gdf)
 
-    print("[5/5] Normalizando y exportando...")
+    print("[6/6] Normalizando y exportando...")
     gdf["renta_norm"] = minmax_norm(gdf["renta_abs"])
     gdf["densidad_norm"] = minmax_norm(gdf["densidad"])
     gdf["jovenes_norm"] = minmax_norm(gdf["pct_jovenes"])

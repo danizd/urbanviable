@@ -14,10 +14,6 @@ export default function ScoutingPage() {
   useMapStyle(mapRef, weights);
 
   const handleWeightChange = (key, value) => {
-    if (key !== 'renta_norm') {
-      return;
-    }
-
     setWeights((current) => ({ ...current, [key]: value }));
   };
 

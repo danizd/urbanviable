@@ -10,8 +10,37 @@ export function useMapStyle(mapRef, weights) {
     }
 
     const applyExpression = (retry = true) => {
-      const rentaWeight = Number(weights.renta_norm || 0);
-      const scoreExpr = ['to-number', ['get', 'renta_norm'], 0];
+      const vars = [
+        'renta_norm',
+        'densidad_norm',
+        'jovenes_norm',
+        'mayores_norm',
+        'actividad_norm',
+        'uso_comercial_norm',
+        'antiguedad_norm',
+      ];
+
+      const activeVars = vars.filter(v => (weights[v] || 0) > 0);
+
+      if (activeVars.length === 0) {
+        if (map.getLayer('secciones-fill')) {
+          map.setPaintProperty('secciones-fill', 'fill-color', 'rgba(80, 80, 100, 0.2)');
+          map.setPaintProperty('secciones-fill', 'fill-opacity', 0.9);
+        }
+        return;
+      }
+
+      let totalWeight = 0;
+      let scoreExpr = ['+'];
+      for (const v of activeVars) {
+        const weight = weights[v] || 0;
+        totalWeight += weight;
+        scoreExpr.push(['*', ['to-number', ['get', v], 0], weight]);
+      }
+
+      if (totalWeight > 0) {
+        scoreExpr = ['/', scoreExpr, totalWeight];
+      }
 
       const fillColorExpression = [
         'interpolate',
@@ -31,9 +60,8 @@ export function useMapStyle(mapRef, weights) {
 
       if (map.getLayer('secciones-fill')) {
         map.setPaintProperty('secciones-fill', 'fill-color', fillColorExpression);
-        map.setPaintProperty('secciones-fill', 'fill-opacity', Math.min(Math.max(rentaWeight, 0), 1));
+        map.setPaintProperty('secciones-fill', 'fill-opacity', 0.9);
       } else if (retry) {
-        // La capa aún no existe, intentar de nuevo en 100ms
         setTimeout(() => applyExpression(false), 100);
       }
     };
@@ -42,7 +70,6 @@ export function useMapStyle(mapRef, weights) {
       if (map.getLayer('secciones-fill')) {
         applyExpression();
       } else {
-        // La capa no está lista, iniciar un intervalo para verificar
         layerCheckInterval.current = setInterval(() => {
           if (map.getLayer('secciones-fill')) {
             applyExpression();
