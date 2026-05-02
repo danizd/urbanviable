@@ -120,7 +120,7 @@ Secciones del sidebar (misma estructura visual que GeoViable):
 │  para tu negocio            │
 ├─────────────────────────────┤
 │  VARIABLES                  │  ← sección
-│  [ScoreSlider × 4]          │
+│  [ScoreSlider × 7]          │  ← renta, jovenes, mayores, actividad, uso_comercial, antiguedad
 ├─────────────────────────────┤
 │  INFORMACIÓN DE ZONA        │  ← sección (se rellena al hacer clic)
 │  [Tooltip.jsx inline]       │
@@ -183,8 +183,26 @@ flotante sobre el mapa. Esto preserva el layout limpio del mapa oscuro.
 └────────────────────────────────┘
 ```
 
-Muestra valores absolutos cuando están disponibles (`renta_abs`, `poblacion_abs`)
-e índices normalizados para las demás variables.
+Muestra:
+- **Municipio** (NMUN) como título principal
+- Código de sección censal (cusec)
+- Valores absolutos e índices normalizados para cada variable
+
+### 4.6 Popup en el mapa — Información rápida
+
+Al hacer click en una sección del mapa, aparece un **popup flotante** con información resumida:
+
+```
+┌──────────────────────────┐
+│  A Coruña                │  ← Nombre del municipio
+│  Sección: 1500101001     │  ← Código
+│  ─────────────────────── │
+│  Renta: 38.500 €         │
+│  Actividad: 45 estab.    │
+└──────────────────────────┘
+```
+
+El popup se cierra automáticamente al hacer click en otra zona.
 
 ---
 

@@ -10,7 +10,8 @@ export default function Tooltip({ feature, onClose, variables }) {
 
   return (
     <div className="tooltip-box">
-      <strong>Sección {feature.cusec || 'sin código'}</strong>
+      <strong>{feature.NMUN || 'Municipio'}</strong>
+      <small style={{ color: '#888' }}>Sección: {feature.cusec || 'sin código'}</small>
       <button type="button" className="map-floating-btn" onClick={onClose} style={{ marginBottom: 12 }}>
         Cerrar
       </button>

@@ -1,11 +1,11 @@
 export const DEFAULT_WEIGHTS = {
-  renta_norm: 0.25,
+  renta_norm: 0.2,
   densidad_norm: 0.0,
-  jovenes_norm: 0.25,
-  mayores_norm: 0.25,
-  actividad_norm: 0.0,
-  uso_comercial_norm: 0.0,
-  antiguedad_norm: 0.0,
+  jovenes_norm: 0.2,
+  mayores_norm: 0.2,
+  actividad_norm: 0.2,
+  uso_comercial_norm: 0.1,
+  antiguedad_norm: 0.1,
 };
 
 export const VARIABLES = [
@@ -48,8 +48,8 @@ export const VARIABLES = [
   {
     key: 'actividad_norm',
     label: 'Actividad',
-    description: 'Sin datos disponibles.',
-    enabled: false,
+    description: 'Densidad de puntos de interés (comercios, restaurantes, oficinas).',
+    enabled: true,
     absKey: 'actividad_abs',
     absLabel: 'Establecimientos',
     absFormat: (value) => `${Number(value || 0).toLocaleString('es-ES')} estab.`,
@@ -57,8 +57,8 @@ export const VARIABLES = [
   {
     key: 'uso_comercial_norm',
     label: 'Uso comercial',
-    description: 'Sin datos disponibles.',
-    enabled: false,
+    description: 'Ratio de edificios con uso comercial/industrial vs residencial.',
+    enabled: true,
     absKey: 'uso_comercial_norm',
     absLabel: 'Índice comercial',
     absFormat: (value) => Number(value || 0).toFixed(2),
@@ -66,8 +66,8 @@ export const VARIABLES = [
   {
     key: 'antiguedad_norm',
     label: 'Antigüedad',
-    description: 'Sin datos disponibles.',
-    enabled: false,
+    description: 'Antigüedad media de los edificios (más nuevo = mayor valor).',
+    enabled: true,
     absKey: 'antiguedad_norm',
     absLabel: 'Índice antigüedad',
     absFormat: (value) => Number(value || 0).toFixed(2),

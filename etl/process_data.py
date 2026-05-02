@@ -20,12 +20,13 @@ from pathlib import Path
 from typing import Optional
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 
 try:
-    import pyrosm  # type: ignore
-except Exception:
-    pyrosm = None
+    import osmium
+except ImportError:
+    osmium = None
 
 DATA_DIR = Path("etl/data")
 PROCESSED_DIR = DATA_DIR / "processed"
@@ -45,6 +46,11 @@ def minmax_norm(series: pd.Series) -> pd.Series:
     if vmax == vmin:
         return pd.Series(0.0, index=values.index)
     return ((values - vmin) / (vmax - vmin)).round(4)
+
+def log_norm(series: pd.Series) -> pd.Series:
+    values = series.fillna(0).clip(lower=0)
+    log_vals = np.log1p(values)
+    return minmax_norm(log_vals)
 
 
 def load_sections() -> gpd.GeoDataFrame:
@@ -329,51 +335,68 @@ def process_poblacion_ige(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 def process_osm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    if pyrosm is None or not OSM_FILE.exists():
+    try:
+        import osmium
+    except ImportError:
         gdf["actividad_abs"] = 0
         gdf["densidad_actividad"] = 0.0
         return gdf
-
-    tags = {
-        "shop": True,
-        "amenity": [
-            "restaurant",
-            "cafe",
-            "bar",
-            "fast_food",
-            "bank",
-            "pharmacy",
-            "clinic",
-            "school",
-            "supermarket",
-            "marketplace",
-        ],
-        "office": True,
+    
+    if not OSM_FILE.exists():
+        print("  [!] No OSM file found")
+        gdf["actividad_abs"] = 0
+        gdf["densidad_actividad"] = 0.0
+        return gdf
+    
+    shop_tags = {"shop"}
+    amenity_tags = {
+        "restaurant", "cafe", "bar", "fast_food", "bank",
+        "pharmacy", "clinic", "school", "supermarket", "marketplace"
     }
-
-    osm = pyrosm.OSM(str(OSM_FILE))
-    pois = osm.get_pois(custom_filter=tags)
-    if pois is None or pois.empty:
+    
+    class POIHandler(osmium.SimpleHandler):
+        def __init__(self):
+            super().__init__()
+            self.points = []
+        
+        def node(self, n):
+            tags = dict(n.tags)
+            is_poi = False
+            for key in tags:
+                if key in shop_tags or key in amenity_tags or key == "office":
+                    is_poi = True
+                    break
+            if is_poi:
+                lon, lat = n.location.lon, n.location.lat
+                self.points.append((lon, lat))
+    
+    print("  [OSM] Processing POIs (this may take a while)...")
+    handler = POIHandler()
+    handler.apply_file(str(OSM_FILE), locations=True)
+    
+    print(f"  [OSM] Found {len(handler.points)} POIs")
+    
+    if not handler.points:
         gdf["actividad_abs"] = 0
         gdf["densidad_actividad"] = 0.0
         return gdf
-
-    pois = pois[pois.geometry.geom_type == "Point"].copy()
-    if pois.empty:
-        gdf["actividad_abs"] = 0
-        gdf["densidad_actividad"] = 0.0
-        return gdf
-
-    pois_proj = pois.to_crs(epsg=25830)
+    
+    from shapely.geometry import Point
+    pois_gdf = gpd.GeoDataFrame(
+        [{"geometry": Point(lon, lat)} for lon, lat in handler.points],
+        crs="EPSG:4326"
+    )
+    
+    pois_proj = pois_gdf.to_crs(epsg=25830)
     sections_proj = gdf.to_crs(epsg=25830)
-
+    
     join_osm = gpd.sjoin(
         pois_proj[["geometry"]],
         sections_proj[["cusec", "area_km2", "geometry"]],
         how="left",
         predicate="within",
     )
-
+    
     activity = join_osm.groupby("cusec").size().reset_index(name="actividad_abs")
     merged = gdf.merge(activity, on="cusec", how="left")
     merged["actividad_abs"] = merged["actividad_abs"].fillna(0).astype(int)
@@ -397,55 +420,91 @@ def process_catastro(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         return gdf
 
     pieces = []
-    for zip_path in constru_zips:
+    for i, zip_path in enumerate(constru_zips):
         try:
             piece = gpd.read_file(f"zip://{zip_path}")
             if piece.empty:
                 continue
             pieces.append(piece)
-        except Exception:
+            if i % 50 == 0:
+                print(f"  Processed {i+1}/{len(constru_zips)} files...")
+        except Exception as e:
+            print(f"  Error reading {zip_path.name}: {e}")
             continue
 
     if not pieces:
+        print("  [!] No se leyo nenhum edificio")
         gdf["ratio_comercial"] = 0.0
         gdf["modernidad"] = 0.0
         return gdf
 
+    print(f"  Total edificios: {len(pieces)} archivos, {sum(len(p) for p in pieces)} features")
+
     buildings = gpd.GeoDataFrame(pd.concat(pieces, ignore_index=True), geometry="geometry")
+    print(f"  Edificios combinados: {len(buildings)}")
+    
     if buildings.crs is None:
         buildings = buildings.set_crs(epsg=25830, allow_override=True)
     elif str(buildings.crs).lower() not in {"epsg:25830", "25830"}:
         buildings = buildings.to_crs(epsg=25830)
 
-    use_candidates = ["currentUse", "USO", "USO_PRINC", "USO_DEST"]
-    year_candidates = ["beginning", "ANO_CONS", "ANIO_CONS", "YEAR", "FEC_CONS"]
+    use_candidates = ["CONSTRU", "TIPO", "currentUse", "USO", "USO_PRINC", "USO_DEST"]
+    year_candidates = ["FECHAALTA", "ANO_CONS", "ANIO_CONS", "YEAR", "FEC_CONS", "beginning"]
 
-    use_col = next((c for c in use_candidates if c in buildings.columns), None)
+    constru_col = next((c for c in use_candidates if c in buildings.columns), None)
     year_col = next((c for c in year_candidates if c in buildings.columns), None)
+    
+    print(f"  constru_col: {constru_col}")
+    print(f"  year_col: {year_col}")
+    if constru_col:
+        print(f"  Sample constru values: {buildings[constru_col].head(3).tolist()}")
 
     sections_proj = gdf.to_crs(epsg=25830)
+    print(f"  Secciones projection: {len(sections_proj)}")
+    
     joined = gpd.sjoin(
-        buildings[[c for c in [use_col, year_col, "geometry"] if c]],
+        buildings[[c for c in [constru_col, year_col, "geometry"] if c]],
         sections_proj[["cusec", "geometry"]],
         how="left",
         predicate="within",
     )
+    
+    print(f"  Joined result: {len(joined)} rows")
 
     if joined.empty:
+        print("  [!] Join returned empty")
         gdf["ratio_comercial"] = 0.0
         gdf["modernidad"] = 0.0
         return gdf
 
+    residential_codes = {'I', 'II', 'III', 'P', 'PI'}
+    
     def is_commercial(value: object) -> int:
-        text = str(value).lower()
-        if any(token in text for token in ["com", "retail", "shop", "office", "indus"]):
+        if pd.isna(value):
+            return 0
+        text = str(value).upper()
+        if '+' in text:
             return 1
-        return 0
+        if text in residential_codes:
+            return 0
+        return 1
+    
+    def get_year(value):
+        if pd.isna(value):
+            return 1970
+        s = str(value)
+        if len(s) >= 4:
+            try:
+                return int(s[:4])
+            except:
+                pass
+        return 1970
 
-    if use_col is None:
+    if constru_col is None:
         joined["_commercial"] = 0
     else:
-        joined["_commercial"] = joined[use_col].apply(is_commercial)
+        joined["_commercial"] = joined[constru_col].apply(is_commercial)
+        print(f"  Commercial count: {joined['_commercial'].sum()}")
 
     if year_col is None:
         joined["_year"] = 1970.0
@@ -471,8 +530,13 @@ def process_catastro(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
     agg["ratio_comercial"] = agg["n_comerciales"] / agg["n_edificios"].clip(lower=1)
     agg["modernidad"] = agg["anio_medio"]
+    
+    print(f"  Aggregation result: {len(agg)} sections with data")
+    print(f"  Sample ratio_comercial: {agg['ratio_comercial'].head(3).tolist()}")
+    print(f"  Sample modernidad: {agg['modernidad'].head(3).tolist()}")
 
     merged = gdf.merge(agg[["cusec", "ratio_comercial", "modernidad"]], on="cusec", how="left")
+    print(f"  After merge: {merged['ratio_comercial'].sum()} total ratio, {merged['modernidad'].mean()} mean year")
     merged["ratio_comercial"] = merged["ratio_comercial"].fillna(0.0)
     merged["modernidad"] = merged["modernidad"].fillna(1970.0)
     return merged
@@ -513,16 +577,24 @@ def main() -> None:
     gdf = process_catastro(gdf)
 
     print("[6/6] Normalizando y exportando...")
+    print(f"  Columns before norm: {gdf.columns.tolist()}")
+    print(f"  ratio_comercial: min={gdf['ratio_comercial'].min():.4f}, max={gdf['ratio_comercial'].max():.4f}")
+    print(f"  modernidad: min={gdf['modernidad'].min():.4f}, max={gdf['modernidad'].max():.4f}")
+    
     gdf["renta_norm"] = minmax_norm(gdf["renta_abs"])
     gdf["densidad_norm"] = minmax_norm(gdf["densidad"])
     gdf["jovenes_norm"] = minmax_norm(gdf["pct_jovenes"])
     gdf["mayores_norm"] = minmax_norm(gdf["pct_mayores"])
-    gdf["actividad_norm"] = minmax_norm(gdf["densidad_actividad"])
+    gdf["actividad_norm"] = log_norm(gdf["densidad_actividad"])
     gdf["uso_comercial_norm"] = minmax_norm(gdf["ratio_comercial"])
     gdf["antiguedad_norm"] = minmax_norm(gdf["modernidad"])
+    
+    print(f"  uso_comercial_norm sample: {gdf['uso_comercial_norm'].head(3).tolist()}")
+    print(f"  antiguedad_norm sample: {gdf['antiguedad_norm'].head(3).tolist()}")
 
     cols_output = [
         "cusec",
+        "NMUN",
         "renta_norm",
         "renta_abs",
         "densidad_norm",

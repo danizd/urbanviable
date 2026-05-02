@@ -4,8 +4,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 export default function MapViewer({ mapRef, onFeatureClick }) {
   const mapContainerRef = useRef(null);
-  const sourceName = import.meta.env.REACT_APP_SOURCE_NAME || 'galicia-scouting';
-  const tileUrl = import.meta.env.REACT_APP_TILE_URL || '/tiles';
+  const sourceName = import.meta.env.VITE_REACT_APP_SOURCE_NAME || 'galicia-scouting';
+  const tileUrl = import.meta.env.VITE_REACT_APP_TILE_URL !== undefined ? import.meta.env.VITE_REACT_APP_TILE_URL : '';
 
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current) {
@@ -60,6 +60,26 @@ export default function MapViewer({ mapRef, onFeatureClick }) {
         const feature = event.features?.[0];
         if (feature?.properties && onFeatureClick) {
           onFeatureClick(feature.properties);
+          
+          const props = feature.properties;
+          const nmun = props.NMUN || 'Municipio';
+          const html = `
+            <div style="padding: 8px; min-width: 150px;">
+              <strong style="font-size: 14px;">${nmun}</strong>
+              <div style="color: #666; font-size: 12px; margin-top: 4px;">
+                Sección: ${props.cusec || '-'}
+              </div>
+              <div style="margin-top: 8px; font-size: 12px;">
+                <div>Renta: ${props.renta_abs?.toLocaleString() || 0} €</div>
+                <div>Actividad: ${props.actividad_abs || 0} estab.</div>
+              </div>
+            </div>
+          `;
+          
+          new maplibregl.Popup()
+            .setLngLat(event.lngLat)
+            .setHTML(html)
+            .addTo(map);
         }
       });
 

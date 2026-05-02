@@ -37,7 +37,8 @@ etl/
 # requirements-etl.txt
 geopandas>=0.14
 pandas>=2.0
-pyrosm>=0.6
+numpy>=1.24
+osmium>=4.0
 pyproj>=3.6
 shapely>=2.0
 openpyxl>=3.1      # por si el Atlas de Renta viene en .xlsx
@@ -230,23 +231,28 @@ print("\n[3/5] Procesando datos OSM...")
 OSM_FILE = f"{DATA_DIR}/osm/galicia-260424.osm.pbf"
 
 if os.path.exists(OSM_FILE):
-    import pyrosm
+    import osmium
+    from shapely.geometry import Point
 
-    osm = pyrosm.OSM(OSM_FILE)
+    class POIHandler(osmium.SimpleHandler):
+        def __init__(self):
+            super().__init__()
+            self.points = []
+        
+        def node(self, n):
+            tags = dict(n.tags)
+            is_poi = any(key in shop_tags or key in amenity_tags or key == 'office' for key in tags)
+            if is_poi:
+                self.points.append((n.location.lon, n.location.lat))
 
-    TAGS_COMERCIALES = {
-        'shop': True,
-        'amenity': [
-            'restaurant', 'cafe', 'bar', 'fast_food',
-            'bank', 'pharmacy', 'clinic', 'school',
-            'supermarket', 'marketplace'
-        ],
-        'office': True,
-    }
+    shop_tags = {'shop'}
+    amenity_tags = {'restaurant', 'cafe', 'bar', 'fast_food', 'bank', 'pharmacy', 'clinic', 'school', 'supermarket', 'marketplace'}
 
-    pois = osm.get_pois(custom_filter=TAGS_COMERCIALES)
-    pois = pois[pois.geometry.geom_type == 'Point'].copy()
-    print(f"  POIs comerciales: {len(pois)}")
+    handler = POIHandler()
+    handler.apply_file(OSM_FILE, locations=True)
+    print(f"  POIs comerciales: {len(handler.points)}")
+
+    pois = gpd.GeoDataFrame([{"geometry": Point(lon, lat)} for lon, lat in handler.points], crs="EPSG:4326")
 
     pois_proj      = pois.to_crs(epsg=25830)
     secciones_proj = gdf.to_crs(epsg=25830)

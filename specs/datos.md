@@ -14,7 +14,7 @@ Ese archivo CSV del Instituto Nacional de Estadística contiene los indicadores 
 Actividad económica / competencia
 https://download.geofabrik.de/europe/spain/galicia.html
 ubicacion: data/galicia-260424.osm.pbf
-El archivo galicia-260424.osm.pbf es un volcado binario comprimido de todos los datos geoespaciales de OpenStreetMap para Galicia (carreteras, edificios, comercios, puntos de interés, etc.), distribuido por Geofabrik, que sirve como fuente cruda para enriquecer tu plataforma de Location Intelligence; debes guardarlo en tu carpeta de ETL (por ejemplo \etl\data\osm\), procesarlo con herramientas como pyrosm o osmium para extraer elementos relevantes (como tiendas, restaurantes o servicios), y luego agregarlos por sección censal (CUSEC) para generar métricas como densidad de negocios o nivel de competencia que puedas integrar en tu modelo y visualizar en el mapa de calor.
+El archivo galicia-260424.osm.pbf es un volcado binario comprimido de todos los datos geoespaciales de OpenStreetMap para Galicia (carreteras, edificios, comercios, puntos de interés, etc.), distribuido por Geofabrik, que sirve como fuente cruda para enriquecer tu plataforma de Location Intelligence; debes guardarlo en tu carpeta de ETL (por ejemplo \etl\data\), procesarlo con **osmium** para extraer elementos relevantes (como tiendas, restaurantes o servicios), y luego agregarlos por sección censal (CUSEC) para generar métricas como densidad de negocios o nivel de competencia que puedas integrar en tu modelo y visualizar en el mapa de calor. La normalización de actividad usa escala logarítmica para distribuir mejor los valores en el mapa.
 
 
 

@@ -180,7 +180,7 @@ print(f"Secciones con dato de renta: {len(df_renta)} (año: {año_max})")
 ## 3. Actividad económica — OpenStreetMap Galicia
 
 **URL:** https://download.geofabrik.de/europe/spain/galicia.html
-**Ubicación local:** `etl/data/osm/galicia-260424.osm.pbf`
+**Ubicación local:** `etl/data/galicia-260424.osm.pbf`
 **Formato:** OSM Protocol Buffer Format (binario comprimido)
 
 ### Propósito
@@ -189,71 +189,90 @@ servicios, oficinas, industria. Permite calcular dos métricas por sección cens
 - **Densidad de actividad:** número de negocios por km² (proxy de vitalidad comercial)
 - **Nº de establecimientos:** valor absoluto para el tooltip
 
-### Librería de procesamiento: `pyrosm`
+### Librería de procesamiento: `osmium` (Python)
 ```bash
-pip install pyrosm
+pip install osmium
 ```
 
 ### Etiquetas OSM de interés (establecimientos comerciales)
 ```python
-TAGS_COMERCIALES = {
-    'shop': True,
-    'amenity': [
-        'restaurant', 'cafe', 'bar', 'fast_food',
-        'bank', 'pharmacy', 'clinic', 'school',
-        'supermarket', 'marketplace'
-    ],
-    'office': True,
-    'leisure': ['fitness_centre', 'sports_centre'],
+shop_tags = {'shop'}
+amenity_tags = {
+    'restaurant', 'cafe', 'bar', 'fast_food',
+    'bank', 'pharmacy', 'clinic', 'school',
+    'supermarket', 'marketplace'
 }
 ```
 
 ### Lógica de procesamiento
 ```python
-import pyrosm
+import osmium
 import geopandas as gpd
+from shapely.geometry import Point
 
-osm = pyrosm.OSM("etl/data/osm/galicia-260424.osm.pbf")
+class POIHandler(osmium.SimpleHandler):
+    def __init__(self):
+        super().__init__()
+        self.points = []
+    
+    def node(self, n):
+        tags = dict(n.tags)
+        is_poi = any(key in shop_tags or key in amenity_tags or key == 'office' for key in tags)
+        if is_poi:
+            self.points.append((n.location.lon, n.location.lat))
 
-# Extraer puntos de interés comerciales
-pois = osm.get_pois(custom_filter=TAGS_COMERCIALES)
-pois = pois[pois.geometry.type == 'Point'].copy()
-print(f"POIs comerciales extraídos: {len(pois)}")
+handler = POIHandler()
+handler.apply_file("etl/data/galicia-260424.osm.pbf", locations=True)
+print(f"POIs comerciales extraídos: {len(handler.points)}")
+
+# Crear GeoDataFrame
+pois_gdf = gpd.GeoDataFrame(
+    [{"geometry": Point(lon, lat)} for lon, lat in handler.points],
+    crs="EPSG:4326"
+)
 
 # Spatial join: asignar cada POI a su sección censal
-pois_proj      = pois.to_crs(epsg=25830)
+pois_proj      = pois_gdf.to_crs(epsg=25830)
 secciones_proj = gdf.to_crs(epsg=25830)
 
 join = gpd.sjoin(
-    pois_proj,
+    pois_proj[['geometry']],
     secciones_proj[['cusec', 'area_km2', 'geometry']],
     how='left', predicate='within'
 )
 
 # Agregar por sección
-actividad = (
-    join.groupby('cusec')
-    .agg(actividad_abs=('index_right', 'count'))
-    .reset_index()
-)
+actividad = join.groupby('cusec').size().reset_index(name='actividad_abs')
 
 # Merge con todas las secciones (incluir las que no tienen actividad)
-actividad = secciones_proj[['cusec', 'area_km2']].merge(
-    actividad, on='cusec', how='left'
-).fillna(0)
+gdf = gdf.merge(actividad, on='cusec', how='left')
+gdf['actividad_abs'] = gdf['actividad_abs'].fillna(0).astype(int)
+gdf['densidad_actividad'] = gdf['actividad_abs'] / gdf['area_km2'].clip(lower=0.01)
 
-actividad['densidad_actividad'] = (
-    actividad['actividad_abs'] / actividad['area_km2'].clip(lower=0.01)
-)
-
-print(f"Secciones con actividad > 0: {(actividad['actividad_abs'] > 0).sum()}")
+print(f"Secciones con actividad > 0: {(gdf['actividad_abs'] > 0).sum()}")
 ```
+
+### Normalización logarítmica
+Para evitar que los valores bajos saturen la visualización, se aplica normalización logarítmica:
+
+```python
+import numpy as np
+
+def log_norm(series):
+    values = series.fillna(0).clip(lower=0)
+    log_vals = np.log1p(values)  # log(1+x)
+    return minmax_norm(log_vals)
+
+gdf['actividad_norm'] = log_norm(gdf['densidad_actividad'])
+```
+
+Esto distribuye mejor los colores en el mapa, ya que la mayoria de secciones tienen pocos establecimientos pero algunas tienen muchas (ciudades).
 
 ### Variables generadas
 | Columna en tesela | Tipo | Descripción |
 |---|---|---|
 | `actividad_abs` | integer | Número de establecimientos en la sección |
-| `actividad_norm` | float [0,1] | Densidad de negocios/km² normalizada |
+| `actividad_norm` | float [0,1] | Densidad de negocios normalizada (escala logarítmica) |
 
 ---
 
@@ -355,22 +374,23 @@ catastro_agg['modernidad'] = 2025 - catastro_agg['año_medio'].fillna(1970)
 
 ## 5. Variables del modelo final
 
-Columnas exactas que deben existir en `galicia_scouting.mbtiles`.
+Columnas exactas que deben existir en `galicia_scouting.geojson`.
 **Este es el contrato entre el ETL y el frontend.**
 
 | Columna | Tipo | Fuente | Para GPU | Para tooltip |
 |---|---|---|---|---|
 | `cusec` | string | Secciones censales | — | ✅ ID de sección |
+| `NMUN` | string | Secciones censales | — | ✅ Nombre municipio |
 | `renta_norm` | float [0,1] | Atlas de Renta | ✅ | — |
 | `renta_abs` | integer | Atlas de Renta | — | ✅ euros |
 | `densidad_norm` | float [0,1] | Padrón / Secciones | ✅ | — |
-| `jovenes_norm` | float [0,1] | Padrón / Secciones | ✅ | — |
-| `mayores_norm` | float [0,1] | Padrón / Secciones | ✅ | — |
+| `jovenes_norm` | float [0,1] | IGE población | ✅ | — |
+| `mayores_norm` | float [0,1] | IGE población | ✅ | — |
 | `poblacion_abs` | integer | Padrón / Secciones | — | ✅ habitantes |
-| `actividad_norm` | float [0,1] | OSM | ✅ | — |
+| `actividad_norm` | float [0,1] | OSM (log norm) | ✅ | — |
 | `actividad_abs` | integer | OSM | — | ✅ establecimientos |
-| `uso_comercial_norm` | float [0,1] | Catastro | ✅ | — |
-| `antiguedad_norm` | float [0,1] | Catastro | ✅ | — |
+| `uso_comercial_norm` | float [0,1] | Catastro/CONSTRU | ✅ | — |
+| `antiguedad_norm` | float [0,1] | Catastro/FECHAALTA | ✅ | — |
 
 **MVP mínimo (solo fuentes 1+2):** Las columnas de OSM y Catastro se rellenan
 con `0.0`. Sus sliders en el frontend aparecerán con valor cero pero funcionales
@@ -378,19 +398,58 @@ para cuando se añadan los datos.
 
 ---
 
-## 6. Padrón Municipal
+## 6. Población por secciones censales — IGE
 
-Los datos de población (densidad, % jóvenes, % mayores) se obtienen de una de
-estas dos formas, en orden de preferencia:
+**URL:** https://www.ige.gal/igebdt/selector.jsp?COD=6057&idioma=es
+**Selector:** 6057 - Indicadores de poboación. Datos por seccións censais
+**Ubicación local:** `etl/data/poblacion_ige.csv`
+**Formato:** CSV
 
-**Opción A (verificar primero):** El shapefile de secciones censales del CNIG ya
-incluye atributos demográficos básicos en sus campos. Ejecutar `print(gdf.columns.tolist())`
-al cargarlo para ver qué campos demográficos están disponibles.
+### Propósito
+Proporciona datos demográficos por sección censal:
+- **Población joven:** % de habitantes menores de 20 años
+- **Población mayor:** % de habitantes mayores de 64 años
 
-**Opción B:** Descarga separada.
-- **URL:** https://www.ine.es/dyngs/INEbase/es/operacion.htm?c=Estadistica_C&cid=1254736177012
-- **Formato:** CSV con estructura similar al Atlas de Renta (formato largo, mismas
-  precauciones sobre nombres de columnas y construcción del CUSEC)
+Estos indicadores permiten evaluar el perfil demográfico de cada zona para
+negocios que dependen de clientela específica (ej: jugueteutes → jóvenes,
+farmacias → mayores).
+
+### Estructura del CSV del IGE
+El formato del IGE puede variar. Estructura típica:
+
+```
+CODIGO;NOMBRE_MUNICIPIO;SECCION;TOTAL;<20;>64;...
+15001;A Coruña;001;3500;700;875;...
+```
+
+### Lógica de procesamiento
+```python
+import pandas as pd
+
+df = pd.read_csv("etl/data/poblacion_ige.csv", sep=';', encoding='latin-1')
+
+# Construir CUSEC: CPRO(2) + CMUN(3) + CSEC(3)
+df['cusec'] = df['CPRO'].astype(str).str.zfill(2) + \
+              df['CMUN'].astype(str).str.zfill(3) + \
+              df['CSEC'].astype(str).str.zfill(3)
+
+# Calcular porcentajes
+df['pct_jovenes'] = df['menores_20'] / df['total'] * 100
+df['pct_mayores'] = df['mayores_64'] / df['total'] * 100
+
+# Merge con secciones
+gdf = gdf.merge(df[['cusec', 'pct_jovenes', 'pct_mayores']], on='cusec', how='left')
+gdf['pct_jovenes'] = gdf['pct_jovenes'].fillna(0)
+gdf['pct_mayores'] = gdf['pct_mayores'].fillna(0)
+```
+
+### Variables generadas
+| Columna | Tipo | Descripción |
+|---|---|---|
+| `pct_jovenes` | float | % población menor de 20 años |
+| `pct_mayores` | float | % población mayor de 64 años |
+| `jovenes_norm` | float [0,1] | Normalizado Min-Max |
+| `mayores_norm` | float [0,1] | Normalizado Min-Max |
 
 ---
 
@@ -400,8 +459,9 @@ al cargarlo para ver qué campos demográficos están disponibles.
 |---|---|---|
 | CNIG / INE — Secciones censales | CC BY 4.0 | "Fuente: IGN / INE" |
 | INE — Atlas de Renta | Reutilización libre (Ley 37/2007) | "Fuente: INE" |
+| IGE — Población | Dominio público (Xunta de Galicia) | "Fonte: IGE - Instituto Galego de Estatística" |
 | OpenStreetMap | ODbL 1.0 | "© OpenStreetMap contributors" |
-| Catastro | Reutilización libre (RD 663/2007) | "Fuente: Sede Electrónica del Catastro" |
+| Catastro | Reutilización libre (RD 663/2007) | "Fonte: Sede Electrónica do Catastro" |
 
 Incluir todas las atribuciones en el footer de la aplicación y en `HowToUsePage`.
 
